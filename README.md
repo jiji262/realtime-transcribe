@@ -16,11 +16,12 @@
 
 ### 🆕 Latest Major Update (2025-01-XX)
 - 🎉 **Multi-line subtitle display**: Shows up to 5 lines of transcription history
-- ⏱️ **Stable 5-second display**: No more flickering subtitles
+- ⚡ **Ultra-low latency**: Optimized for minimal delay between speech and subtitles
 - 🔄 **Smart scrolling**: Automatic upward scrolling when exceeding max lines
 - 🎯 **Auto MacBook mic detection**: Automatically finds and uses MacBook Pro microphone
 - ✨ **Professional subtitle experience**: Smooth transitions and visual improvements
 - 🚀 **One-command start**: Super simple `python start.py` to get started
+- 🎛️ **Optimized defaults**: 0.2s min duration, 512 chunk size for real-time performance
 
 ### ⚠️ Known Issues
 - Some audio devices may require manual selection

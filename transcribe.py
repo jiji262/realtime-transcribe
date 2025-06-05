@@ -65,10 +65,10 @@ def parse_args():
             help="Disable fp16 optimization")
   parser.add_argument("--stabilize-turns", default=0,
             help="Turns to stabilize result (default: 0 for real-time)", type=int)
-  parser.add_argument("--min-duration", default=0.5,
-            help="Min duration of audio to process (default: 0.5s)", type=float)
-  parser.add_argument("--max-duration", default=2.0,
-            help="Max duration of audio to process (default: 2.0s)", type=float)
+  parser.add_argument("--min-duration", default=0.2,
+            help="Min duration of audio to process (default: 0.2s for low latency)", type=float)
+  parser.add_argument("--max-duration", default=1.5,
+            help="Max duration of audio to process (default: 1.5s for low latency)", type=float)
   parser.add_argument("--keep-transcriptions", action='store_true', default=False,
             help="Keep all previous transcriptions")
 
@@ -83,8 +83,8 @@ def parse_args():
   # args for input provider 'pyaudio'
   parser.add_argument("--moving-window", default=10,
             help="Moving window duration in seconds", type=int)
-  parser.add_argument("--chunk-size", default=1024,
-            help="Audio chunk size (default: 1024)", type=int)
+  parser.add_argument("--chunk-size", default=512,
+            help="Audio chunk size (default: 512 for low latency)", type=int)
   parser.add_argument("--realtime-mode", action='store_true', default=True,
             help="Enable real-time optimizations (default: enabled)")
   args = parser.parse_args()
@@ -914,7 +914,7 @@ class Transcriber():
     # 字幕显示稳定性控制
     last_transcription_result = ""  # 上次的转录结果
     last_result_display_time = 0  # 上次显示结果的时间
-    result_display_duration = 5.0  # 转录结果显示持续时间（秒）- 增加到5秒
+    result_display_duration = 3.0  # 转录结果显示持续时间（秒）- 减少到3秒以降低延迟
     is_showing_result = False  # 是否正在显示转录结果
     min_silence_before_new_transcription = 2.0  # 静音多长时间后才开始新的转录
 
@@ -1026,8 +1026,8 @@ class Transcriber():
               acc_audio_data = acc_audio_data[phrase_cut_off:]
               print(f"Applied phrase cut off: {phrase_cut_off} samples, remaining: {len(acc_audio_data)/self.sample_rate:.2f} seconds")
 
-          # 在实时模式下，减小所需的最小音频数据量
-          min_audio_length = 0.5 if realtime_mode else 1.0  # 秒
+          # 在实时模式下，大幅减小所需的最小音频数据量以降低延迟
+          min_audio_length = 0.2 if realtime_mode else 0.5  # 秒 - 减少延迟
 
           # 检查是否正在显示转录结果
           if is_showing_result and current_time - last_result_display_time < result_display_duration:
@@ -1048,8 +1048,8 @@ class Transcriber():
           if len(acc_audio_data) >= self.sample_rate * min_audio_length:
             print(f"Audio data sufficient ({len(acc_audio_data)/self.sample_rate:.2f} seconds), starting transcription...")
             should_transcribe = True
-          # 如果音频数据不够长，但已经等待了足够长的时间，也进行转录
-          elif current_time - last_transcription_time >= 3.0 and len(acc_audio_data) > 0:
+          # 如果音频数据不够长，但已经等待了足够长的时间，也进行转录 - 减少超时时间
+          elif current_time - last_transcription_time >= 1.0 and len(acc_audio_data) > 0:
             print(f"Timeout reached, processing {len(acc_audio_data)/self.sample_rate:.2f} seconds of audio")
             should_transcribe = True
           else:
@@ -1086,9 +1086,9 @@ class Transcriber():
             audio_max = np.max(np.abs(audio_np))
             print(f"Audio max amplitude: {audio_max:.6f}")
 
-            # 检查是否是静音
-            if audio_max < 0.001:  # 提高阈值
-              print("Audio appears to be silent, skipping transcription")
+            # 检查是否是静音 - 提高阈值以减少对背景噪音的敏感度
+            if audio_max < 0.01:  # 大幅提高阈值，减少无效转录
+              print(f"Audio appears to be silent (max: {audio_max:.6f}), skipping transcription")
               acc_audio_data = np.array([], dtype=np.float32)
               continue
 

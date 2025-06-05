@@ -95,8 +95,14 @@ def main():
             print("👋 Goodbye!")
             break
         elif choice == "1":
-            # Optimized English mode with new defaults
-            run_transcription(["--model", "tiny.en", "--language", "en"])
+            # Optimized English mode with low-latency defaults
+            run_transcription([
+                "--model", "tiny.en",
+                "--language", "en",
+                "--min-duration", "0.2",
+                "--max-duration", "1.5",
+                "--chunk-size", "512"
+            ])
         elif choice == "2":
             # Chinese mode
             run_transcription(["--model", "base", "--language", "zh"])
