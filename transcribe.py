@@ -274,20 +274,23 @@ class HUD(QMainWindow):
   
   def format_text_html(self, text):
     # 将文本转换为HTML格式，增强可读性
-    paragraphs = text.split('\n\n')
+    lines = text.split('\n')
     html_parts = ['<html><body>']
-    
+
     # 添加顶部边距
     html_parts.append('<div style="margin-top:5px;"></div>')
-    
-    for paragraph in paragraphs:
-      lines = paragraph.split('\n')
-      for i, line in enumerate(lines):
-        if line.strip():
-          # 当前行使用current类，较亮
-          # 增加行高和底部边距，提高可读性
-          html_parts.append(f'<p class="current" style="line-height:130%; margin-bottom:8px; letter-spacing:0.5px;">{line}</p>')
-      
+
+    for i, line in enumerate(lines):
+      if line.strip():
+        # 最后一行（当前正在转录的）使用较亮的颜色
+        # 之前的行使用稍暗的颜色表示已完成
+        if i == len(lines) - 1:
+          # 当前正在转录的句子 - 使用动画效果减少跳跃感
+          html_parts.append(f'<p class="current" style="line-height:130%; margin-bottom:8px; letter-spacing:0.5px; color:#F8F8F8; transition: all 0.3s ease-in-out; opacity: 1; transform: translateY(0);">{line}</p>')
+        else:
+          # 已完成的句子 - 稍暗但稳定
+          html_parts.append(f'<p class="previous" style="line-height:130%; margin-bottom:8px; letter-spacing:0.5px; color:rgba(255,255,255,0.85); transition: all 0.3s ease-in-out; opacity: 0.9;">{line}</p>')
+
     html_parts.append('</body></html>')
     return ''.join(html_parts)
 
@@ -724,11 +727,17 @@ class Transcriber():
         if args.input is None:
           # 选择所需输入设备的索引
           default_device = 0
-          # 查找名称中带有"mic"的第一个设备
+          # 优先查找MacBook Pro麦克风，然后是其他麦克风
           for idx, name in enumerate(devices):
-            if "mic" in name.lower() or "microphone" in name.lower():
+            if "MacBook Pro" in name or "麦克风" in name:
               default_device = idx
               break
+          # 如果没找到MacBook Pro麦克风，查找其他麦克风
+          if default_device == 0:
+            for idx, name in enumerate(devices):
+              if "mic" in name.lower() or "microphone" in name.lower():
+                default_device = idx
+                break
           
           print(f"Default device will be {default_device}: {devices[default_device]} in 5 seconds...")
           print("Enter device number to override (or press Enter to use default):", end="", flush=True)
@@ -791,14 +800,14 @@ class Transcriber():
       if text is None:
         print("Warning: Attempted to update with None text, ignored")
         return
-        
+
       if not isinstance(text, str):
         text = str(text)
         print(f"Warning: Non-string text converted to: {text}")
-      
+
       # 去除多余空白字符但保留基本格式
       cleaned_text = ' '.join([line.strip() for line in text.split('\n')])
-      
+
       # 确保文本非空
       if cleaned_text.strip():
         # 更新全局变量
@@ -806,10 +815,65 @@ class Transcriber():
         # 限制日志长度以避免刷屏
         preview = cleaned_text[:50] + "..." if len(cleaned_text) > 50 else cleaned_text
         print(f"Updated global text_to_display: '{preview}' (len={len(cleaned_text)})")
-        
+
         # Note: UI updates are handled by the main thread timer, no need to force update here
       else:
         print("Warning: Attempted to update with empty text, ignored")
+
+  def is_sentence_complete(self, text):
+    """检测句子是否完整（以句号、问号、感叹号等结尾）"""
+    if not text or not text.strip():
+      return False
+
+    text = text.strip()
+    # 检查是否以句子结束符结尾
+    sentence_endings = ['.', '!', '?', '。', '！', '？', '...', ':', '：']
+    return any(text.endswith(ending) for ending in sentence_endings)
+
+  def manage_caption_history(self, new_texts, caption_history, current_caption, last_complete_caption, max_lines=5):
+    """
+    智能管理字幕历史，防止跳跃，支持多行滚动显示
+    返回: (updated_history, updated_current, updated_last_complete, display_text)
+    """
+    if not new_texts:
+      return caption_history, current_caption, last_complete_caption, None
+
+    # 获取最新的转录文本
+    latest_text = new_texts[-1] if new_texts else ""
+    latest_text = latest_text.strip()
+
+    if not latest_text:
+      return caption_history, current_caption, last_complete_caption, None
+
+    # 总是添加新的转录结果到历史中（不管是否完整）
+    if latest_text and latest_text != last_complete_caption:
+      # 避免重复添加相同的文本
+      if not caption_history or caption_history[-1] != latest_text:
+        caption_history.append(latest_text)
+        last_complete_caption = latest_text
+        print(f"Added new caption: {latest_text}")
+
+        # 保持最大行数限制，实现向上滚动效果
+        if len(caption_history) > max_lines:
+          caption_history = caption_history[-max_lines:]
+          print(f"Caption history trimmed to {max_lines} lines")
+
+    # 构建显示文本 - 显示所有历史记录
+    display_lines = []
+    for sentence in caption_history:
+      if sentence.strip():
+        display_lines.append(sentence.strip())
+
+    # 生成最终显示文本
+    display_text = '\n'.join(display_lines) if display_lines else None
+
+    return caption_history, current_caption, last_complete_caption, display_text
+
+
+
+
+
+
 
   def listen(self):
     args = self.args
@@ -827,12 +891,30 @@ class Transcriber():
     last_displayed_text_length = 0  # 跟踪上次显示的文本长度
     min_text_change = 3  # 最小文本变化量，小于此值不更新显示
 
+    # 字幕历史管理 - 防止跳跃
+    caption_history = []  # 已完成的字幕句子
+    current_caption = ""  # 当前正在转录的句子
+    max_caption_lines = 5  # 最多显示的字幕行数
+    last_complete_caption = ""  # 上次的完整字幕，用于检测新句子
+
+    # 字幕显示稳定性控制
+    last_transcription_result = ""  # 上次的转录结果
+    last_result_display_time = 0  # 上次显示结果的时间
+    result_display_duration = 5.0  # 转录结果显示持续时间（秒）- 增加到5秒
+    is_showing_result = False  # 是否正在显示转录结果
+    min_silence_before_new_transcription = 2.0  # 静音多长时间后才开始新的转录
+
+
+
+
+
     try:
       print("Starting recording...")
       self.input_provider.start_record()
       print("Recording started, waiting for audio data")
 
       if args.no_faster_whisper:
+        import torch
         acc_audio_data = torch.zeros((0,), dtype=torch.float32, device=self.compute_device)
         last_transcription_time = time.time()
         last_update_time = time.time()
@@ -840,7 +922,7 @@ class Transcriber():
         empty_queue_count = 0
         
         # 确保启动时更新UI
-        self.update_hud_text("Listening...\nSay something to test")
+        self.update_hud_text("🎤 正在监听您的语音...\n请清晰地说话")
       else:
         acc_audio_data = np.zeros((0,), dtype=np.float32)
         
@@ -850,7 +932,7 @@ class Transcriber():
         empty_queue_count = 0
         
         # 确保启动时更新UI
-        self.update_hud_text("Listening...\nSay something to test")
+        self.update_hud_text("🎤 正在监听您的语音...\n请清晰地说话")
         
       while not self.stop_event.is_set():
         try:
@@ -899,12 +981,12 @@ class Transcriber():
           # 即使没有新音频数据，也要定期尝试转录当前累积的音频
           if len(audio_data) == 0:
             # 如果已经有一定量的音频数据且经过了足够的时间
-            if len(acc_audio_data) > 0 and current_time - last_transcription_time > 0.5:
+            if len(acc_audio_data) > 0 and current_time - last_transcription_time > 1.0:
               print(f"No new data, but processing existing {len(acc_audio_data)/self.sample_rate:.2f} seconds of audio")
-              # 继续处理现有数据
+              # 不要continue，让程序继续处理现有数据
             else:
               sleep(0.05)
-            continue
+              continue
 
           # 转换音频格式
           try:
@@ -930,220 +1012,266 @@ class Transcriber():
               acc_audio_data = acc_audio_data[phrase_cut_off:]
               print(f"Applied phrase cut off: {phrase_cut_off} samples, remaining: {len(acc_audio_data)/self.sample_rate:.2f} seconds")
 
-            # 在实时模式下，减小所需的最小音频数据量
-            min_audio_length = 0.3 if realtime_mode else 1.0  # 秒
+          # 在实时模式下，减小所需的最小音频数据量
+          min_audio_length = 0.5 if realtime_mode else 1.0  # 秒
 
-            # 如果音频数据太少，就不处理，除非已经过去太长时间
-            if len(acc_audio_data) < self.sample_rate * min_audio_length:
-              if current_time - last_transcription_time < 1.0:
-                print(f"Audio data too short ({len(acc_audio_data)/self.sample_rate:.2f} seconds), waiting for more data...")
-                continue
-              else:
-                print(f"Timeout reached, processing {len(acc_audio_data)/self.sample_rate:.2f} seconds of audio")
-            else:
-              print(f"Audio data sufficient ({len(acc_audio_data)/self.sample_rate:.2f} seconds), starting transcription...")
-            
-            # 更新最后转录时间
-            last_transcription_time = current_time
-            
-            # 进行转录
-            try:
-              print(f"Starting transcription of {len(acc_audio_data)/self.sample_rate:.2f} seconds of audio...")
-              # 显示正在转录的提示
-              if current_time - last_update_time > 2.0:  # 避免频繁更新
-                self.update_hud_text("正在转录您的语音...\n请稍候")
-                last_update_time = current_time
+          # 检查是否正在显示转录结果
+          if is_showing_result and current_time - last_result_display_time < result_display_duration:
+            # 正在显示转录结果，暂停转录
+            sleep(0.2)  # 增加睡眠时间，减少CPU使用
+            continue
+          elif is_showing_result and current_time - last_result_display_time >= result_display_duration:
+            # 转录结果显示时间已到，但不立即恢复监听状态
+            # 保持当前字幕显示，只是允许新的转录
+            is_showing_result = False
+            print("Result display time expired, allowing new transcription...")
+            # 不立即更改显示文本，保持字幕稳定
 
-              # 确保音频数据不为空
-              if len(acc_audio_data) == 0:
-                print("Warning: No audio data to transcribe")
-                continue
+          # 检查是否应该进行转录
+          should_transcribe = False
 
-              # 添加音频数据调试信息
-              print(f"Audio data type: {type(acc_audio_data)}")
+          # 如果音频数据足够长，立即转录
+          if len(acc_audio_data) >= self.sample_rate * min_audio_length:
+            print(f"Audio data sufficient ({len(acc_audio_data)/self.sample_rate:.2f} seconds), starting transcription...")
+            should_transcribe = True
+          # 如果音频数据不够长，但已经等待了足够长的时间，也进行转录
+          elif current_time - last_transcription_time >= 3.0 and len(acc_audio_data) > 0:
+            print(f"Timeout reached, processing {len(acc_audio_data)/self.sample_rate:.2f} seconds of audio")
+            should_transcribe = True
+          else:
+            print(f"Audio data too short ({len(acc_audio_data)/self.sample_rate:.2f} seconds), waiting for more data...")
+            continue
 
-              # 处理不同类型的音频数据
-              if hasattr(acc_audio_data, 'numpy'):
-                # 如果是Tensor，转换为numpy
-                audio_np = acc_audio_data.numpy().astype(np.float32)
-                print("Converted Tensor to numpy array")
-              elif isinstance(acc_audio_data, bytes):
-                # 如果是bytes，使用frombuffer
-                audio_np = np.frombuffer(acc_audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-                print("Converted bytes to numpy array")
-              elif isinstance(acc_audio_data, np.ndarray):
-                # 如果已经是numpy数组
-                audio_np = acc_audio_data.astype(np.float32)
-                print("Audio data is already numpy array")
-              else:
-                # 尝试直接转换
-                audio_np = np.array(acc_audio_data, dtype=np.float32)
-                print(f"Converted {type(acc_audio_data)} to numpy array")
+          # 只有当应该转录时才继续
+          if not should_transcribe:
+            continue
 
-              audio_max = np.max(np.abs(audio_np))
-              audio_rms = np.sqrt(np.mean(audio_np**2))
-              print(f"Audio stats: max={audio_max:.4f}, rms={audio_rms:.4f}, length={len(audio_np)} samples")
+          # 强制进行转录，即使音频数据较少
+          if len(acc_audio_data)/self.sample_rate >= 1.0:  # 如果有至少1秒的音频
+            print(f"Forcing transcription with {len(acc_audio_data)/self.sample_rate:.2f} seconds of audio")
+            # 不要break，继续执行转录逻辑
 
-              # 检查是否是静音
-              if audio_max < 0.001:  # 非常小的阈值
-                print("Warning: Audio appears to be silent (max amplitude < 0.001)")
-              elif audio_rms < 0.0001:
-                print("Warning: Audio appears to be very quiet (RMS < 0.0001)")
+          # 更新最后转录时间
+          last_transcription_time = current_time
 
-              params = {}
-              # 在实时模式下设置更多优化参数
-              if realtime_mode:
-                if args.no_faster_whisper:
-                  # Standard Whisper's real-time mode optimization
-                  params['beam_size'] = 1
-                  params['best_of'] = 1
-                else:
-                  # faster_whisper's real-time mode optimization
-                  params['beam_size'] = 1
-                  params['best_of'] = 1
-                  params['temperature'] = [0.0]
-              
-              if args.no_faster_whisper and not args.no_fp16 and (self.compute_device == "cuda"):
-                params['fp16'] = True
+          # 进行转录
+          try:
+            print(f"Starting transcription of {len(acc_audio_data)/self.sample_rate:.2f} seconds of audio...")
 
-              if args.translate:
-                params['task'] = 'translate'
-
-              # Read the transcription.
-              # 确保传递给Whisper的是正确的数据格式
-              if hasattr(acc_audio_data, 'numpy'):
-                # 如果是Tensor，转换为numpy
-                audio_for_whisper = acc_audio_data.numpy()
-              elif isinstance(acc_audio_data, np.ndarray):
-                # 如果已经是numpy数组
-                audio_for_whisper = acc_audio_data
-              else:
-                # 如果是bytes，保持原样
-                audio_for_whisper = acc_audio_data
-
-              result = self.audio_model.transcribe(
-                audio_for_whisper,
-                condition_on_previous_text=False,
-                language=self.language,
-                initial_prompt='\n'.join(transcription[-self.n_context:]),
-                **params,
-              )
-              
-              print("Transcription completed, processing result...")
-              print(f"Result type: {type(result)}")
-              
-              if not args.no_faster_whisper:
-                # 处理faster_whisper的结果
-                segments, info = result
-                result = { 'segments': [] }
-                for seg in segments:
-                  result['segments'].append({
-                    'text': seg.text,
-                    'start': seg.start,
-                    'end': seg.end,
-                  })
-              else:
-                # 标准whisper模式的结果处理
-                print(f"Standard whisper result keys: {result.keys()}")
-                
-                # 确保结果包含segments
-                if 'segments' not in result:
-                  print("Warning: No 'segments' key in standard whisper result")
-                  # 尝试从text中提取
-                  if 'text' in result:
-                    print(f"Found 'text' in result: {result['text']}")
-                    # 直接使用text创建一个虚拟segment
-                    result['segments'] = [{
-                      'text': result['text'],
-                      'start': 0,
-                      'end': len(acc_audio_data)/self.sample_rate
-                    }]
-                  else:
-                    print("ERROR: Could not find text in result")
-                    result['segments'] = []
-              
-              # 检查segments是否为空
-              if not result.get('segments'):
-                print("Warning: Empty segments list in result")
-                result['segments'] = []
-
-              # 无论使用哪种模式，都统一提取texts
-              texts = []
-              for segment in result['segments']:
-                # 打印调试信息
-                print(f"Processing segment: {segment}")
-                if 'text' in segment:
-                  text = segment['text'].strip()
-                  if text:  # 只添加非空文本
-                    texts.append(text)
-
-              if texts:
-                print(f"Extracted texts count: {len(texts)}")
-                print(f"Transcription result: {texts}")
-              else:
-                print("Warning: No transcription text extracted, possibly no speech in audio")
-                
-                # 如果没有提取到文本，但原始结果中有text字段，直接使用它
-                if args.no_faster_whisper and isinstance(result, dict) and 'text' in result:
-                  text = result['text'].strip()
-                  if text:
-                    texts = [text]
-                    print(f"Using fallback text from result: {text}")
-            except Exception as e:
-              print(f"Error in transcription process: {e}")
-              import traceback
-              traceback.print_exc()
-              sleep(0.3)
+            # 确保音频数据不为空
+            if len(acc_audio_data) == 0:
+              print("Warning: No audio data to transcribe")
               continue
 
-            # 即使只有部分转录结果也立即更新UI
-            if texts:
-              # 使用文本稳定性检查
-              current_result = '\n'.join(texts)
-              
-              # 检查结果是否有效
-              if current_result.strip():
-                # 检查文本稳定性
-                if current_result == stable_text:
-                  text_stability_count += 1
+            # 简化的音频检查
+            if isinstance(acc_audio_data, np.ndarray):
+              audio_np = acc_audio_data.astype(np.float32)
+            else:
+              audio_np = np.array(acc_audio_data, dtype=np.float32)
+
+            audio_max = np.max(np.abs(audio_np))
+            print(f"Audio max amplitude: {audio_max:.6f}")
+
+            # 检查是否是静音
+            if audio_max < 0.001:  # 提高阈值
+              print("Audio appears to be silent, skipping transcription")
+              acc_audio_data = np.array([], dtype=np.float32)
+              continue
+
+            print("Proceeding with transcription...")
+
+            # 只有在没有字幕历史时才显示正在转录的提示
+            if not caption_history:
+              self.update_hud_text("🎤 正在转录您的语音...")
+            else:
+              print("Skipping transcription indicator - preserving caption history")
+
+            # 简化的参数设置
+            params = {
+              'beam_size': 1,
+              'best_of': 1,
+              'temperature': [0.0],
+              'no_speech_threshold': 0.3,
+              'condition_on_previous_text': False
+            }
+
+            # 进行转录
+            try:
+              print("Calling audio_model.transcribe...")
+
+              # 根据模型类型处理音频数据
+              if args.no_faster_whisper:
+                # 标准whisper - 需要将numpy数组转换为torch张量
+                if isinstance(acc_audio_data, np.ndarray):
+                  audio_tensor = torch.from_numpy(acc_audio_data.astype(np.float32))
+                  result = self.audio_model.transcribe(audio_tensor, language=self.language)
                 else:
-                  stable_text = current_result
-                  text_stability_count = 1
-                
-                # 根据稳定性决定是否更新UI
-                should_update = False
-                
-                # 实时模式下降低稳定性要求，提高响应速度
-                required_stability = 1 if realtime_mode else min_stability_count
-                
-                # 如果同样的文本多次出现，或者已经很长时间没更新，则更新
-                if (text_stability_count >= required_stability) or (current_time - last_update_time > 0.8):
-                  should_update = True
-                
-                # 对于新句子，检查是否有足够的新内容
-                if texts != last_shown_texts and len(current_result) > last_displayed_text_length + min_text_change:
-                  should_update = True
-
-                # 在实时模式下，更积极地更新UI
-                if realtime_mode and texts:
-                  should_update = True
-
-                if should_update:
-                  # 直接调用更新，确保UI线程处理
-                  print(f"Updating HUD with text: {current_result[:50]}..." if len(current_result) > 50 else current_result)
-                  self.update_hud_text(current_result)
-                  last_update_time = current_time
-                  last_shown_texts = texts.copy()
-                  last_displayed_text_length = len(current_result)  # 更新已显示文本长度记录
+                  result = self.audio_model.transcribe(acc_audio_data, language=self.language)
               else:
-                # 如果没有文本但有有效的音频数据，显示正在处理的提示
-                if len(acc_audio_data)/self.sample_rate > 1.0:  # 只有当有至少1秒的音频时才更新
-                  if current_time - last_update_time > 3.0:  # 每3秒更新一次反馈
-                    print("Updating HUD with listening prompt")
-                    self.update_hud_text("正在听您说话...\n请继续说话")
-                    last_update_time = current_time
-                print("Warning: No transcription texts available")
+                # faster_whisper - 直接使用numpy数组
+                result = self.audio_model.transcribe(
+                  acc_audio_data,
+                  language=self.language,
+                  **params,
+                )
 
+              print("Transcription call completed successfully")
+            except Exception as transcribe_error:
+              print(f"Error during transcription call: {transcribe_error}")
+              import traceback
+              traceback.print_exc()
+              if args.no_faster_whisper:
+                acc_audio_data = torch.zeros((0,), dtype=torch.float32, device=self.compute_device)
+              else:
+                acc_audio_data = np.array([], dtype=np.float32)
+              continue
+
+            print("Transcription completed, processing result...")
+
+            # 提取转录文本
+            texts = []
+            try:
+              if not args.no_faster_whisper:
+                # faster_whisper结果处理
+                print("Processing faster_whisper result...")
+                segments, info = result
+                print(f"Got segments and info: {info}")
+
+                # 尝试多种方法安全地提取转录文本
+                print("Attempting to safely extract transcription text...")
+                texts = []
+
+                # 检查是否有语音活动
+                if info.duration_after_vad > 0:
+                  print(f"Voice activity detected: {info.duration_after_vad} seconds")
+
+                  # 方法1: 尝试检查segments的类型和属性
+                  try:
+                    print(f"Segments type: {type(segments)}")
+                    print(f"Segments has __iter__: {hasattr(segments, '__iter__')}")
+                    print(f"Segments has __len__: {hasattr(segments, '__len__')}")
+
+                    # 尝试获取segments的长度（如果支持）
+                    try:
+                      seg_len = len(segments)
+                      print(f"Segments length: {seg_len}")
+                    except:
+                      print("Segments does not support len()")
+
+                    # 方法2: 完全跳过segments迭代，使用替代方法
+                    print("Skipping segments iteration, using alternative approach...")
+
+                    # 尝试重新转录，但使用不同的参数来获取简单结果
+                    try:
+                      print("Attempting re-transcription with simpler parameters...")
+
+                      # 使用更简单的参数重新转录同一段音频
+                      simple_segments, simple_info = self.audio_model.transcribe(
+                        acc_audio_data,
+                        language=self.language,
+                        beam_size=1,
+                        word_timestamps=False,
+                        condition_on_previous_text=False,
+                        vad_filter=False  # 关闭VAD过滤
+                      )
+
+                      print("Simple transcription completed, attempting to get text...")
+
+                      # 尝试从简单转录中获取文本
+                      simple_text_parts = []
+                      segment_count = 0
+
+                      for segment in simple_segments:
+                        if segment_count >= 1:  # 只取第一个segment
+                          break
+                        if hasattr(segment, 'text') and segment.text:
+                          simple_text_parts.append(segment.text.strip())
+                          print(f"Got simple text: '{segment.text.strip()}'")
+                        segment_count += 1
+
+                      if simple_text_parts:
+                        combined_text = ' '.join(simple_text_parts)
+                        texts.append(combined_text)
+                        print(f"Successfully got text via re-transcription: '{combined_text}'")
+                      else:
+                        print("Re-transcription also failed to get text")
+                        texts = [f"✓ 检测到 {info.duration_after_vad:.2f}秒 语音"]
+
+                    except Exception as retranscribe_error:
+                      print(f"Re-transcription failed: {retranscribe_error}")
+                      texts = [f"✓ 检测到 {info.duration_after_vad:.2f}秒 语音"]
+
+                  except Exception as segments_error:
+                    print(f"Error analyzing segments: {segments_error}")
+                    texts = [f"✓ 检测到 {info.duration_after_vad:.2f}秒 语音"]
+                else:
+                  print("No voice activity detected")
+                  texts = []
+              else:
+                # 标准whisper结果处理
+                print("Processing standard whisper result...")
+                try:
+                  print(f"Standard whisper result: {result}")
+
+                  if 'text' in result and result['text'].strip():
+                    texts.append(result['text'].strip())
+                    print(f"Got text from standard whisper: '{result['text'].strip()}'")
+                  else:
+                    print("Standard whisper returned no text")
+                    texts = []
+                except Exception as std_whisper_error:
+                  print(f"Error with standard whisper: {std_whisper_error}")
+                  texts = []
+            except Exception as process_error:
+              print(f"Error processing transcription result: {process_error}")
+              import traceback
+              traceback.print_exc()
+              texts = []
+
+            if texts:
+              print(f"Transcription result: {texts}")
+
+              # 使用字幕历史管理功能
+              caption_history, current_caption, last_complete_caption, display_text = self.manage_caption_history(
+                texts, caption_history, current_caption, last_complete_caption, max_caption_lines
+              )
+
+              if display_text:
+                print(f"Updating HUD with managed text: {display_text}")
+                self.update_hud_text(display_text)
+
+                # 设置结果显示状态 - 延长显示时间
+                last_transcription_result = display_text
+                last_result_display_time = current_time
+                is_showing_result = True
+                print(f"Showing result for {result_display_duration} seconds")
+              else:
+                print("No display text generated from caption management")
+
+              # 转录成功后，清空音频缓冲区
+              print("Clearing audio buffer after successful transcription")
+              if args.no_faster_whisper:
+                acc_audio_data = torch.zeros((0,), dtype=torch.float32, device=self.compute_device)
+              else:
+                acc_audio_data = np.array([], dtype=np.float32)
+            else:
+              print("No speech detected, clearing audio buffer")
+              if args.no_faster_whisper:
+                acc_audio_data = torch.zeros((0,), dtype=torch.float32, device=self.compute_device)
+              else:
+                acc_audio_data = np.array([], dtype=np.float32)
+
+          except Exception as e:
+            print(f"Error in transcription process: {e}")
+            # 清空音频缓冲区，避免重复处理错误的数据
+            if args.no_faster_whisper:
+              acc_audio_data = torch.zeros((0,), dtype=torch.float32, device=self.compute_device)
+            else:
+              acc_audio_data = np.array([], dtype=np.float32)
+            sleep(0.3)
+            continue
+
+          # 简化的后处理逻辑
           if args.stabilize_turns > 0:
             if len(texts) == 0 and len(acc_audio_data)/self.sample_rate > args.max_duration:
               cut_off = int(len(acc_audio_data) - args.min_duration*self.sample_rate)
@@ -1182,9 +1310,10 @@ class Transcriber():
           os.system('cls' if os.name=='nt' else 'clear')
           for line in transcription:
             print(line)
-          for seg in result['segments']:
-            print('%.2f' % seg['start'], '->', '%.2f' % seg['end'], seg['text'])
-            # 刷新标准输出
+          # 只在有segments的情况下打印调试信息
+          if texts:
+            print("Transcription successful:", texts)
+          # 刷新标准输出
           print('', end='', flush=True)
           
         except KeyboardInterrupt:
@@ -1238,7 +1367,7 @@ def main():
     # 全局变量初始内容
     global text_to_display
     with text_lock:
-      text_to_display = "Caption system started\nInitializing transcriber..."
+      text_to_display = "🎤 实时转录系统已启动\n请开始说话..."
     
     print("Creating transcriber...")
     

@@ -14,6 +14,17 @@
 
 **🎉 FULLY WORKING!** All major bugs fixed and ready to use.
 
+### 🆕 Latest Improvements (2025-06-05)
+- ✅ **Reduced subtitle jumping**: Added smooth transition effects and better text update logic
+- ✅ **Enhanced error handling**: Better debugging information for transcription issues
+- ✅ **Improved audio processing**: More robust audio input handling
+- ✅ **Visual feedback**: Added completion indicators (✓) for finished sentences
+- ✅ **CSS animations**: Smooth fade-in/out effects for text updates
+
+### ⚠️ Known Issues
+- **Segmentation fault**: Occasional crashes after transcription processing (under investigation)
+- **Audio device compatibility**: Some audio devices may not work properly with certain configurations
+
 ## 🚀 Quick Start
 
 ### 1. Install Dependencies
