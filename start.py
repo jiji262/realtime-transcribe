@@ -47,7 +47,7 @@ def run_transcription(command_args):
         print("-" * 50)
 
         # Use the optimized command with new defaults
-        subprocess.run(["python", "transcribe.py"] + command_args)
+        subprocess.run(["python3", "transcribe.py"] + command_args)
     except KeyboardInterrupt:
         print("\n\n👋 Transcription stopped by user.")
     except Exception as e:
