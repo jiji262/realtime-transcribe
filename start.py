@@ -1,75 +1,114 @@
 #!/usr/bin/env python3
 """
-Simple launcher for Real-time Speech Transcription
+🎤 Real-time Speech Transcription - Quick Start
+===============================================
+
+The simplest way to start real-time transcription with optimal settings.
+
+Usage:
+    python start.py                    # Interactive menu
+    python start.py --english          # Direct English transcription
+    python start.py --chinese          # Direct Chinese transcription
+    python start.py --help             # Show help
 """
 
 import os
 import sys
 import subprocess
+import argparse
 
 def print_header():
-    print("=" * 50)
-    print("🎤 Real-time Speech Transcription")
-    print("=" * 50)
+    print("=" * 60)
+    print("🎤 Real-time Speech Transcription with Live Subtitles")
+    print("=" * 60)
+    print("✨ Features: Multi-line subtitles • 5s stable display • Auto MacBook mic")
     print()
 
 def print_menu():
-    print("Choose your language:")
+    print("🚀 Quick Start Options:")
     print()
-    print("1. 🇺🇸 English (Fast & Accurate)")
-    print("2. 🇨🇳 Chinese (中文)")
-    print("3. ⚡ Ultra-fast English (Lower quality)")
-    print("4. 🎯 High-accuracy English (Slower)")
+    print("1. 🇺🇸 English (Recommended - Fast & Accurate)")
+    print("2. 🇨🇳 Chinese (中文转录)")
+    print("3. 🌍 Auto-detect Language")
+    print("4. 🎯 High-quality English (Better accuracy, slower)")
     print()
     print("0. Exit")
     print()
 
-def run_transcription(command):
-    """Run the transcription with the given command"""
+def run_transcription(command_args):
+    """Run the transcription with the given command arguments"""
     try:
-        print("Starting transcription...")
-        print("Press Ctrl+C to stop")
-        print("-" * 30)
-        subprocess.run(command, shell=True)
+        print("🚀 Starting transcription...")
+        print("💡 Tips:")
+        print("   - Speak clearly at normal volume")
+        print("   - Subtitle window will appear automatically")
+        print("   - Press Ctrl+C to stop")
+        print("   - Drag subtitle window to desired position")
+        print("-" * 50)
+
+        # Use the optimized command with new defaults
+        subprocess.run(["python", "transcribe.py"] + command_args)
     except KeyboardInterrupt:
-        print("\nTranscription stopped.")
+        print("\n\n👋 Transcription stopped by user.")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"\n❌ Error: {e}")
+        print("\n🔧 Troubleshooting:")
+        print("   - Ensure microphone permissions are granted")
+        print("   - Check: pip install -r requirements.txt")
 
 def main():
+    # Handle command line arguments for direct start
+    parser = argparse.ArgumentParser(description="Quick start real-time transcription")
+    parser.add_argument("--english", action="store_true", help="Start English transcription directly")
+    parser.add_argument("--chinese", action="store_true", help="Start Chinese transcription directly")
+    parser.add_argument("--auto", action="store_true", help="Start auto-language detection")
+
+    args = parser.parse_args()
+
+    # Direct start options
+    if args.english:
+        print("🇺🇸 Starting English transcription...")
+        run_transcription(["--model", "tiny.en", "--language", "en"])
+        return
+    elif args.chinese:
+        print("🇨🇳 Starting Chinese transcription...")
+        run_transcription(["--model", "base", "--language", "zh"])
+        return
+    elif args.auto:
+        print("🌍 Starting auto-language detection...")
+        run_transcription(["--model", "base", "--language", "auto"])
+        return
+
+    # Interactive menu
     print_header()
-    
+
     while True:
         print_menu()
-        
+
         try:
             choice = input("Enter your choice (0-4): ").strip()
         except KeyboardInterrupt:
-            print("\nGoodbye!")
+            print("\n👋 Goodbye!")
             sys.exit(0)
-        
+
         if choice == "0":
-            print("Goodbye!")
+            print("👋 Goodbye!")
             break
         elif choice == "1":
-            # Standard English mode - balanced speed and accuracy
-            command = "python3 transcribe.py --model tiny.en --language en --realtime-mode --chunk-size 1024 --min-duration 0.5 --max-duration 3.0 --stabilize-turns 0"
-            run_transcription(command)
+            # Optimized English mode with new defaults
+            run_transcription(["--model", "tiny.en", "--language", "en"])
         elif choice == "2":
             # Chinese mode
-            command = "python3 transcribe.py --model small --language zh --chunk-size 2048 --min-duration 1.0 --max-duration 5.0"
-            run_transcription(command)
+            run_transcription(["--model", "base", "--language", "zh"])
         elif choice == "3":
-            # Ultra-fast English mode
-            command = "python3 transcribe.py --model tiny.en --language en --realtime-mode --chunk-size 512 --min-duration 0.3 --max-duration 2.0 --stabilize-turns 0"
-            run_transcription(command)
+            # Auto-detect language
+            run_transcription(["--model", "base", "--language", "auto"])
         elif choice == "4":
-            # High-accuracy English mode
-            command = "python3 transcribe.py --model base.en --language en --chunk-size 2048 --min-duration 1.0 --max-duration 4.0"
-            run_transcription(command)
+            # High-quality English mode
+            run_transcription(["--model", "base.en", "--language", "en"])
         else:
-            print("Invalid choice. Please try again.")
-        
+            print("❌ Invalid choice. Please try again.")
+
         print()
 
 if __name__ == "__main__":

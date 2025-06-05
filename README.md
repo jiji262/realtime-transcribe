@@ -14,16 +14,17 @@
 
 **🎉 FULLY WORKING!** All major bugs fixed and ready to use.
 
-### 🆕 Latest Improvements (2025-06-05)
-- ✅ **Reduced subtitle jumping**: Added smooth transition effects and better text update logic
-- ✅ **Enhanced error handling**: Better debugging information for transcription issues
-- ✅ **Improved audio processing**: More robust audio input handling
-- ✅ **Visual feedback**: Added completion indicators (✓) for finished sentences
-- ✅ **CSS animations**: Smooth fade-in/out effects for text updates
+### 🆕 Latest Major Update (2025-01-XX)
+- 🎉 **Multi-line subtitle display**: Shows up to 5 lines of transcription history
+- ⏱️ **Stable 5-second display**: No more flickering subtitles
+- 🔄 **Smart scrolling**: Automatic upward scrolling when exceeding max lines
+- 🎯 **Auto MacBook mic detection**: Automatically finds and uses MacBook Pro microphone
+- ✨ **Professional subtitle experience**: Smooth transitions and visual improvements
+- 🚀 **One-command start**: Super simple `python start.py` to get started
 
 ### ⚠️ Known Issues
-- **Segmentation fault**: Occasional crashes after transcription processing (under investigation)
-- **Audio device compatibility**: Some audio devices may not work properly with certain configurations
+- Some audio devices may require manual selection
+- First-time model download may take a few minutes
 
 ## 🚀 Quick Start
 
@@ -32,20 +33,33 @@
 pip install -r requirement.txt
 ```
 
-### 2. Run the Application
+### 2. Super Simple Start ⭐
 
-**Super Easy Way:**
+**The easiest way (recommended):**
 ```bash
-python3 start.py
+python start.py
+```
+Choose from the interactive menu, or start directly:
+
+```bash
+python start.py --english    # English transcription
+python start.py --chinese    # Chinese transcription
+python start.py --auto       # Auto-detect language
 ```
 
-**Quick Commands:**
+### 3. Advanced Usage
 ```bash
-# English transcription
-./start_english.sh
+# Default optimized settings (tiny.en model, MacBook mic, English)
+python transcribe.py
 
-# Chinese transcription (中文)
-./start_chinese.sh
+# Better quality (slower)
+python transcribe.py --model base.en
+
+# Chinese transcription
+python transcribe.py --model base --language zh
+
+# Larger subtitle font
+python transcribe.py --font-size 40
 ```
 
 That's it! 🎉
@@ -53,7 +67,11 @@ That's it! 🎉
 ## ✨ What It Does
 
 🎯 **Real-time speech-to-text** - Speak and see your words appear instantly
+📝 **Multi-line subtitle display** - Shows up to 5 lines of transcription history
+⏱️ **Stable 5-second display** - No more flickering, subtitles stay visible
+🔄 **Smart scrolling** - Automatic upward scrolling for continuous conversation
 🖥️ **Beautiful floating captions** - Elegant overlay window you can move around
+🎤 **Auto microphone detection** - Automatically finds your MacBook microphone
 🌍 **Multiple languages** - English, Chinese, and more
 ⚡ **Fast and accurate** - Powered by OpenAI's Whisper AI
 🔒 **Privacy-first** - Everything runs locally on your computer
@@ -78,17 +96,20 @@ Choose from:
 
 ### Direct Commands
 ```bash
-# Standard English (recommended)
-python3 transcribe.py --model tiny.en --language en --realtime-mode
+# Default optimized settings (recommended)
+python transcribe.py
 
-# Chinese
-python3 transcribe.py --model small --language zh
+# Better quality English
+python transcribe.py --model base.en
 
-# Ultra-fast (lower quality)
-python3 transcribe.py --model tiny.en --language en --realtime-mode --chunk-size 512
+# Chinese transcription
+python transcribe.py --model base --language zh
 
-# High accuracy (slower)
-python3 transcribe.py --model base.en --language en
+# Auto-detect language
+python transcribe.py --model base --language auto
+
+# Larger subtitle font
+python transcribe.py --font-size 40
 ```
 
 ## 🛠️ Installation

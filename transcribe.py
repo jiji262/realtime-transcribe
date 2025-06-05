@@ -27,52 +27,66 @@ text_to_display = "Loading captions..."
 text_lock = threading.Lock()
 
 def parse_args():
-  parser = argparse.ArgumentParser()
-  parser.add_argument("--model", default="tiny", help="Model to use",
+  parser = argparse.ArgumentParser(
+    description="🎤 Real-time Speech Transcription with Live Subtitles",
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog="""
+🚀 Quick Start Examples:
+  python transcribe.py                    # Start with default settings (tiny.en model, MacBook mic)
+  python transcribe.py --model base.en    # Use base model for better accuracy
+  python transcribe.py --language zh      # Transcribe Chinese speech
+  python transcribe.py --font-size 40     # Larger subtitle font
+
+📝 For more help: https://github.com/jiji262/realtime-transcribe
+    """
+  )
+
+  # 简化的核心参数，设置最佳默认值
+  parser.add_argument("--model", default="tiny.en", help="Whisper model to use (default: tiny.en for fast English transcription)",
             choices=["tiny", "base", "small", "medium", "large", "tiny.en", "base.en", "small.en", "medium.en", "large-v3"])
+  parser.add_argument("--language", default="en",
+            help="Language for transcription (default: en). Use 'zh' for Chinese, 'auto' for auto-detection", type=str)
+  parser.add_argument("--font-size", default=32,
+            help="Subtitle font size (default: 32)", type=int)
+
+  # 高级参数（大多数用户不需要修改）
   parser.add_argument("--input", default=None,
-            help="Audio input device (can be a device index or partial device name).", type=str)
+            help="Audio input device (auto-detects MacBook microphone by default)", type=str)
   parser.add_argument("--input-provider", default="pyaudio",
             choices=["pyaudio", "speech-recognition"],
-            help="Default input provider.", type=str)
-  parser.add_argument("--no-faster-whisper", action='store_true', default=False,
-            help="Disable faster whisper.")
+            help="Audio input provider (default: pyaudio)", type=str)
+  parser.add_argument("--no-faster-whisper", action='store_true', default=True,
+            help="Use standard Whisper instead of faster-whisper (default: enabled for stability)")
 
-  parser.add_argument("--language", default=None,
-            help="Default language.", type=str)
   parser.add_argument("--translate", action='store_true', default=False,
-            help="Translate to English.")
+            help="Translate to English")
 
   parser.add_argument("--no-fp16", action='store_true', default=False,
-            help="Disable fp16.")
-  parser.add_argument("--stabilize-turns", default=1,
-            help="Turns to stabilize result (before discarding audio record). 0 means never.", type=int)
-  parser.add_argument("--min-duration", default=2.0,
-            help="Min duration of audio record to keep.", type=float)
-  parser.add_argument("--max-duration", default=10.0,
-            help="Max duration of audio record to keep.", type=float)
+            help="Disable fp16 optimization")
+  parser.add_argument("--stabilize-turns", default=0,
+            help="Turns to stabilize result (default: 0 for real-time)", type=int)
+  parser.add_argument("--min-duration", default=0.5,
+            help="Min duration of audio to process (default: 0.5s)", type=float)
+  parser.add_argument("--max-duration", default=2.0,
+            help="Max duration of audio to process (default: 2.0s)", type=float)
   parser.add_argument("--keep-transcriptions", action='store_true', default=False,
             help="Keep all previous transcriptions")
 
-  parser.add_argument("--font-size", default=30,
-            help="Font size of HUD.", type=int)
-
   # args for input provider 'speech-recognition'
   parser.add_argument("--energy_threshold", default=300,
-            help="Energy level for mic to detect.", type=int)
-  parser.add_argument("--record_timeout", default=0.3, 
-            help="How real time the recording is in seconds.", type=float)
-  parser.add_argument("--phrase_timeout", default=0.8, 
-            help="How much empty space between recordings before we "
-               "consider it a new line in the transcription.", type=float)
+            help="Energy level for mic to detect", type=int)
+  parser.add_argument("--record_timeout", default=0.3,
+            help="How real time the recording is in seconds", type=float)
+  parser.add_argument("--phrase_timeout", default=0.8,
+            help="How much empty space between recordings before considering it a new line", type=float)
 
   # args for input provider 'pyaudio'
-  parser.add_argument("--moving-window", default=10, 
-            help="Moving window duration in seconds for transription.", type=int)
-  parser.add_argument("--chunk-size", default=1024, 
-            help="Audio chunk size for pyaudio.", type=int)
-  parser.add_argument("--realtime-mode", action='store_true', default=False,
-            help="Enable optimizations for real-time display")
+  parser.add_argument("--moving-window", default=10,
+            help="Moving window duration in seconds", type=int)
+  parser.add_argument("--chunk-size", default=1024,
+            help="Audio chunk size (default: 1024)", type=int)
+  parser.add_argument("--realtime-mode", action='store_true', default=True,
+            help="Enable real-time optimizations (default: enabled)")
   args = parser.parse_args()
   return args
 
