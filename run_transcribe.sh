@@ -94,7 +94,7 @@ case $choice in
         ;;
     6)
         show_starting_info "tiny.en" "Ultra-realtime Mode" "English"
-        python3 transcribe.py --input-provider pyaudio --model tiny.en --no-faster-whisper --language en --chunk-size 512 --moving-window 3 --stablize-turns 0 --min-duration 1 --max-duration 5 --realtime-mode --font-size 36
+        python3 transcribe.py --input-provider pyaudio --model tiny.en --no-faster-whisper --language en --chunk-size 512 --moving-window 3 --stabilize-turns 0 --min-duration 1 --max-duration 5 --realtime-mode --font-size 36
         ;;
     0)
         echo -e "${BLUE}Exiting program${NC}"
