@@ -328,7 +328,7 @@ class SystemAudioProvider(AudioInputProvider):
   def __init__(self, args, data_queue, sample_rate):
     self.audio = pyaudio.PyAudio()
 
-    self.audio_format = pyaudio.paInt16  # Format of the audio samples
+    self.audio_format = pyaudio.paFloat32  # 改为Float32格式，与诊断工具一致
     self.audio_channels = 1  # Number of audio channels (1 for mono, 2 for stereo)
     self.sample_rate = sample_rate  # Sample rate (samples per second)
     self.sample_size = self.audio.get_sample_size(self.audio_format)
@@ -356,38 +356,53 @@ class SystemAudioProvider(AudioInputProvider):
 
   def list_input_devices(self):
     devices = []
+    self.device_index_map = {}  # 映射列表索引到实际PyAudio设备索引
     try:
       print("Finding available audio input devices...")
-      for idx in range(self.audio.get_device_count()):
-        device_info = self.audio.get_device_info_by_index(idx)
+      list_idx = 0
+      for pyaudio_idx in range(self.audio.get_device_count()):
+        device_info = self.audio.get_device_info_by_index(pyaudio_idx)
         # Only include devices that support input
         if device_info.get('maxInputChannels', 0) > 0:
           devices.append(device_info['name'])
-          print(f"Found input device {idx}: {device_info['name']}")
+          self.device_index_map[list_idx] = pyaudio_idx  # 保存映射关系
+          print(f"Found input device {list_idx}: {device_info['name']} (PyAudio index: {pyaudio_idx})")
+          list_idx += 1
 
       # If no input devices found, add a default option
       if not devices:
         print("No input devices found, using default device")
         devices.append("Default Input Device")
+        self.device_index_map[0] = None
     except Exception as e:
       print(f"Error listing audio devices: {e}")
       devices.append("Default Input Device")
+      self.device_index_map[0] = None
 
     return devices
 
-  def init_input_device(self, device_index):
+  def init_input_device(self, device_list_index):
+    # 将设备列表索引转换为实际的PyAudio设备索引
+    if hasattr(self, 'device_index_map') and device_list_index in self.device_index_map:
+      actual_device_index = self.device_index_map[device_list_index]
+      print(f"Mapping device list index {device_list_index} to PyAudio index {actual_device_index}")
+    else:
+      actual_device_index = device_list_index
+      print(f"No mapping found, using device index {device_list_index} directly")
+
     # Validate the device supports input
     try:
-      print(f"Initializing audio device, index: {device_index}")
-      device_info = self.audio.get_device_info_by_index(device_index)
-      if device_info.get('maxInputChannels', 0) <= 0:
-        print(f"Warning: Device {device_index} does not support input, attempting to use default input device")
-        device_index = self.audio.get_default_input_device_info()['index']
+      print(f"Initializing audio device, PyAudio index: {actual_device_index}")
+      if actual_device_index is not None:
+        device_info = self.audio.get_device_info_by_index(actual_device_index)
+        if device_info.get('maxInputChannels', 0) <= 0:
+          print(f"Warning: Device {actual_device_index} does not support input, attempting to use default input device")
+          actual_device_index = self.audio.get_default_input_device_info()['index']
     except Exception as e:
-      print(f"Error with device {device_index}: Using default device: {e}")
-      device_index = None
+      print(f"Error with device {actual_device_index}: Using default device: {e}")
+      actual_device_index = None
 
-    self.device_index = device_index
+    self.device_index = actual_device_index
     print(f"Using input device index: {self.device_index}")
 
   def start_record(self):
@@ -772,7 +787,7 @@ class SystemAudioTranscriber():
     # 字幕显示稳定性控制
     last_transcription_result = ""  # 上次的转录结果
     last_result_display_time = 0  # 上次显示结果的时间
-    result_display_duration = 3.0  # 转录结果显示持续时间（秒）- 减少到3秒以降低延迟
+    result_display_duration = 5.0  # 转录结果显示持续时间（秒）- 增加到5秒，提高稳定性
     is_showing_result = False  # 是否正在显示转录结果
 
     try:
@@ -823,15 +838,15 @@ class SystemAudioTranscriber():
               print(f"Detected {len(audio_data_list)} audio data packets")
               print(f"Received audio data: {len(audio_data)} bytes")
 
-              # 转换音频数据
+              # 转换音频数据 - 现在使用Float32格式
               if args.no_faster_whisper:
                 # 对于标准whisper，转换为torch tensor
-                audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_np = np.frombuffer(audio_data, dtype=np.float32)  # 直接使用float32，无需除法转换
                 audio_tensor = torch.from_numpy(audio_np).to(self.compute_device)
                 acc_audio_data = torch.cat([acc_audio_data, audio_tensor])
               else:
                 # 对于faster-whisper，使用numpy
-                audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_np = np.frombuffer(audio_data, dtype=np.float32)  # 直接使用float32，无需除法转换
                 acc_audio_data = np.concatenate([acc_audio_data, audio_np])
 
               print(f"Audio data processed, current cumulative {len(acc_audio_data)/self.sample_rate:.2f} seconds")
@@ -855,13 +870,13 @@ class SystemAudioTranscriber():
             should_transcribe = True
 
           if should_transcribe:
-            # 检查是否是静音 - 提高阈值以减少对背景噪音的敏感度
+            # 检查是否是静音 - 调整阈值适应Float32格式
             if args.no_faster_whisper:
               audio_max = torch.max(torch.abs(acc_audio_data)).item()
             else:
               audio_max = np.max(np.abs(acc_audio_data))
 
-            if audio_max < 0.01:  # 大幅提高阈值，减少无效转录
+            if audio_max < 0.005:  # 降低阈值，适应Float32格式的音频数据
               print(f"Audio appears to be silent (max: {audio_max:.6f}), skipping transcription")
               if args.no_faster_whisper:
                 acc_audio_data = torch.zeros((0,), dtype=torch.float32, device=self.compute_device)
@@ -873,8 +888,8 @@ class SystemAudioTranscriber():
             print(f"Audio max amplitude: {audio_max:.6f}")
             print("Proceeding with transcription...")
 
-            # 更新UI状态
-            self.update_hud_text("🔊 正在转录系统音频...")
+            # 移除"正在转录"状态显示，避免闪烁
+            # 直接等待转录结果，保持当前字幕稳定显示
 
             try:
               # 执行转录
@@ -942,7 +957,15 @@ class SystemAudioTranscriber():
           if is_showing_result and current_time - last_result_display_time >= result_display_duration:
             print("Result display time expired, allowing new transcription...")
             is_showing_result = False
-            # 不清除文本，保持字幕历史显示
+            # 保持字幕历史显示，不回到"等待"状态
+            # 如果有字幕历史，继续显示最后的字幕；如果没有，显示等待状态
+            if caption_history:
+              # 重新显示字幕历史，保持稳定显示
+              display_text = '\n'.join(caption_history[-max_caption_lines:])
+              self.update_hud_text(display_text)
+              print(f"Maintaining caption history display: {len(caption_history)} lines")
+            elif not current_caption:
+              self.update_hud_text("🔊 正在监听系统音频...\n播放音频内容以开始转录")
 
           # 短暂休眠以避免过度占用CPU
           sleep(0.05)
